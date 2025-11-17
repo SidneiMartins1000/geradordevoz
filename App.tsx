@@ -543,7 +543,7 @@ const App: React.FC = () => {
             <h2 className="text-xl font-bold text-white">3. Ajustes de Tom e Velocidade</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                  <label htmlFor="tone" className="block text-sm font-medium text-gray-300 mb-2">Tom de Voz Padrão</label>
+                  <label htmlFor="tone" className="block text-sm font-medium text-gray-300 mb-2">Escolha o Tom de Voz</label>
                   <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-red-500 focus:border-red-500">
                       {Object.entries(TONE_PRESETS).map(([key, _]) => <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>)}
                   </select>
