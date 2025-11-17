@@ -1,7 +1,7 @@
 
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { GoogleGenAI, Modality, GenerateContentParameters } from '@google/genai';
+import React, { useState, useCallback } from 'react';
+import { GoogleGenAI, Modality } from '@google/genai';
 import { VoiceOption, TextBlock, GeneratedAudio } from './types';
 import { VOICES } from './constants';
 
@@ -14,18 +14,10 @@ import AudioPlayer from './components/AudioPlayer';
 import { audioBufferToWavBlob, decode, decodeAudioData, float32ToInt16 } from './utils/audioUtils';
 import { splitText } from './utils/textUtils';
 
-// Fix: Define the AIStudio interface and use it for window.aistudio to resolve the type conflict.
-// This aligns with an existing global type definition for window.aistudio.
 declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
   interface Window {
     JSZip: any;
     lamejs: any;
-    aistudio?: AIStudio;
   }
 }
 
@@ -42,7 +34,7 @@ const TONE_PRESETS: Record<string, string> = {
 
 const App: React.FC = () => {
   const [fullScript, setFullScript] = useState<string>('');
-  const [charLimit, setCharLimit] = useState<string>('200');
+  const [charLimit, setCharLimit] = useState<string>('5000');
   const [distributedBlocks, setDistributedBlocks] = useState<TextBlock[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>('');
 
@@ -61,48 +53,6 @@ const App: React.FC = () => {
   const [isZipping, setIsZipping] = useState<boolean>(false);
   const [isMerging, setIsMerging] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
-
-  const checkApiKey = useCallback(async () => {
-    if (!window.aistudio) return true; // Failsafe if aistudio is not present
-    const hasKey = await window.aistudio.hasSelectedApiKey();
-    if (!hasKey) {
-      setIsApiKeyMissing(true);
-      setError("Por favor, selecione uma chave de API para continuar.");
-    }
-    return hasKey;
-  }, []);
-
-  useEffect(() => {
-    checkApiKey();
-  }, [checkApiKey]);
-
-  // Helper function for API calls with exponential backoff retry
-  const generateWithRetry = useCallback(async (params: GenerateContentParameters) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    let retries = 3;
-    let delay = 1000;
-
-    for (let i = 0; i < retries; i++) {
-        try {
-            const response = await ai.models.generateContent(params);
-            return response;
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            const isOverloaded = errorMessage.includes('503') || errorMessage.includes('UNAVAILABLE') || errorMessage.includes('overloaded');
-            
-            if (isOverloaded && i < retries - 1) {
-                console.warn(`API is overloaded. Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                delay *= 2; // Exponential backoff
-            } else {
-                throw err; // Re-throw the error if it's not a retryable one or retries are exhausted
-            }
-        }
-    }
-    // This should not be reached, but as a fallback:
-    throw new Error("Falha na chamada da API após múltiplas tentativas.");
-  }, []);
 
 
   const handleSplitAndDistributeScript = useCallback(() => {
@@ -135,8 +85,6 @@ const App: React.FC = () => {
   }, [fullScript, charLimit, selectedVoice, tone]);
 
   const handlePreviewVoice = useCallback(async (voice: VoiceOption) => {
-    if (!(await checkApiKey())) return;
-
     if (voicePreviews[voice.id]?.url) {
       const audio = new Audio(voicePreviews[voice.id].url);
       audio.play();
@@ -146,8 +94,9 @@ const App: React.FC = () => {
     setVoicePreviews(prev => ({ ...prev, [voice.id]: { url: '', isLoading: true } }));
 
     try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const textForPreview = `${TONE_PRESETS[tone]}Olá, esta é uma demonstração da minha voz.`;
-      const response = await generateWithRetry({
+      const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: textForPreview }] }],
         config: {
@@ -173,14 +122,11 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Error previewing voice:', err);
-      setError("Falha ao pré-visualizar a voz. O modelo pode estar sobrecarregado.");
       setVoicePreviews(prev => ({ ...prev, [voice.id]: { url: '', isLoading: false } }));
     }
-  }, [voicePreviews, tone, generateWithRetry, checkApiKey]);
+  }, [voicePreviews, tone]);
   
   const handleGenerateImagePrompts = useCallback(async () => {
-    if (!(await checkApiKey())) return;
-
     if (!fullScript.trim()) {
       alert('Por favor, insira um roteiro completo primeiro.');
       return;
@@ -189,11 +135,12 @@ const App: React.FC = () => {
     setImagePrompts('');
     setError(null);
     try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const paragraphs = fullScript.split(/\n+/).filter(p => p.trim() !== '');
       
       const promptPromises = paragraphs.map(paragraph => {
         const promptInstruction = `Crie um prompt de imagem em inglês, curto e descritivo, para o texto a seguir. O prompt deve ser otimizado para modelos como Midjourney ou DALL-E. Retorne APENAS o texto do prompt, sem nenhuma introdução ou formatação extra. Texto: "${paragraph}"`;
-        return generateWithRetry({
+        return ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: promptInstruction,
         });
@@ -205,16 +152,11 @@ const App: React.FC = () => {
       setImagePrompts(prompts.join('\n\n'));
     } catch (err) {
       console.error(err);
-      const errorMsg = err instanceof Error ? err.message : 'Falha ao gerar prompts de imagem.';
-       if (errorMsg.includes('503') || errorMsg.includes('UNAVAILABLE')) {
-        setError('O modelo está sobrecarregado. Por favor, tente novamente em alguns instantes.');
-       } else {
-        setError(errorMsg);
-       }
+      setError(err instanceof Error ? err.message : 'Falha ao gerar prompts de imagem.');
     } finally {
       setIsPromptLoading(false);
     }
-  }, [fullScript, generateWithRetry, checkApiKey]);
+  }, [fullScript]);
 
   const generateSingleAudio = useCallback(async (block: TextBlock) => {
     setGeneratedAudios(prev => ({...prev, [block.id]: {url: '', isLoading: true, error: null}}));
@@ -224,8 +166,9 @@ const App: React.FC = () => {
           throw new Error('Voz não encontrada para o bloco.');
         }
 
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const textToGenerate = `${TONE_PRESETS[block.tone]}${block.text}`;
-        const response = await generateWithRetry({
+        const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text: textToGenerate }] }],
             config: {
@@ -249,17 +192,12 @@ const App: React.FC = () => {
         }
     } catch (err) {
         console.error(`Error generating audio for block ${block.id}:`, err);
-        let errorMsg = err instanceof Error ? err.message : 'Erro desconhecido.';
-        if (errorMsg.includes('503') || errorMsg.includes('UNAVAILABLE')) {
-            errorMsg = 'Modelo sobrecarregado. Tente novamente.';
-        }
+        const errorMsg = err instanceof Error ? err.message : 'Erro desconhecido.';
         setGeneratedAudios(prev => ({...prev, [block.id]: {url: '', isLoading: false, error: errorMsg}}));
     }
-  }, [generateWithRetry]);
+  }, []);
 
   const handleGenerateAllAudios = useCallback(async () => {
-    if (!(await checkApiKey())) return;
-
     if (distributedBlocks.length === 0) {
         alert('Nenhum bloco de texto para gerar.');
         return;
@@ -272,7 +210,7 @@ const App: React.FC = () => {
     await Promise.allSettled(generationPromises);
     
     setIsGeneratingAll(false);
-  }, [distributedBlocks, generateSingleAudio, checkApiKey]);
+  }, [distributedBlocks, generateSingleAudio]);
 
   const handleDownloadAllAsZip = async () => {
     if (!window.JSZip) {
@@ -402,28 +340,6 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 flex flex-col items-center p-4 sm:p-6 lg:p-8">
       <div className="w-full max-w-4xl mx-auto space-y-8">
-        {isApiKeyMissing && (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                <div className="bg-gray-800 p-8 rounded-lg text-center shadow-xl max-w-md w-full">
-                    <h3 className="text-xl font-bold mb-4 text-white">Chave de API Necessária</h3>
-                    <p className="mb-6 text-gray-300">Para usar as funcionalidades de IA, você precisa selecionar uma chave de API do Google AI Studio.</p>
-                    <button
-                        onClick={async () => {
-                            if (!window.aistudio) {
-                                setError("Funcionalidade de seleção de chave não disponível.");
-                                return;
-                            }
-                            await window.aistudio.openSelectKey();
-                            setIsApiKeyMissing(false);
-                            setError(null);
-                        }}
-                        className="w-full py-2 px-4 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 transition-colors"
-                    >
-                        Selecionar Chave de API
-                    </button>
-                </div>
-            </div>
-        )}
         <Header />
         <a href="https://mercadodigitalonline.net/promptautomatico/" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full max-w-sm mx-auto py-3 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 shadow-lg">
             <span className="text-2xl" role="img" aria-label="Pergaminho">📜</span>
@@ -605,11 +521,7 @@ const App: React.FC = () => {
 
                             <div className="flex-shrink-0">
                                 <button 
-                                    onClick={async () => {
-                                        if (await checkApiKey()) {
-                                          generateSingleAudio(block);
-                                        }
-                                    }}
+                                    onClick={() => generateSingleAudio(block)}
                                     disabled={audioInfo?.isLoading || !block.text.trim()}
                                     className="py-2 px-4 bg-gray-600 text-white text-sm font-semibold rounded-md hover:bg-gray-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                                 >
