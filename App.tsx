@@ -13,18 +13,10 @@ import AudioPlayer from './components/AudioPlayer';
 import { audioBufferToWavBlob, decode, decodeAudioData, float32ToInt16 } from './utils/audioUtils';
 import { splitText } from './utils/textUtils';
 
-// Fix: Define the AIStudio interface and use it for window.aistudio to resolve the type conflict.
-// This aligns with an existing global type definition for window.aistudio.
 declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
   interface Window {
     JSZip: any;
     lamejs: any;
-    aistudio?: AIStudio;
   }
 }
 
@@ -40,6 +32,7 @@ const TONE_PRESETS: Record<string, string> = {
 
 
 const App: React.FC = () => {
+  const [apiKey, setApiKey] = useState<string>(() => sessionStorage.getItem('gemini-api-key') || '');
   const [fullScript, setFullScript] = useState<string>('');
   const [charLimit, setCharLimit] = useState<string>('5000');
   const [distributedBlocks, setDistributedBlocks] = useState<TextBlock[]>([]);
@@ -59,7 +52,10 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const generateWithRetry = useCallback(async (params: GenerateContentParameters) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    if (!apiKey) {
+      throw new Error("An API Key must be set when running in a browser");
+    }
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     let retries = 3;
     let delay = 1000;
 
@@ -81,7 +77,7 @@ const App: React.FC = () => {
         }
     }
     throw new Error("Falha na chamada da API após múltiplas tentativas.");
-  }, []);
+  }, [apiKey]);
 
   const handleSplitAndDistributeScript = useCallback(() => {
     setError(null);
@@ -116,6 +112,10 @@ const App: React.FC = () => {
 
 
   const handlePreviewVoice = useCallback(async (voice: VoiceOption) => {
+    if (!apiKey) {
+      setError("Por favor, insira sua Chave de API para pré-visualizar as vozes.");
+      return;
+    }
     if (voicePreviews[voice.id]?.url) {
       const audio = new Audio(voicePreviews[voice.id].url);
       audio.play();
@@ -153,16 +153,22 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('Error previewing voice:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
-      if (errorMessage.includes('API key not valid') || errorMessage.includes('Requested entity was not found')) {
-          setError("Chave de API inválida. Por favor, selecione uma chave de API válida e tente novamente.");
+      if (errorMessage.includes('API key not valid') || errorMessage.includes('Requested entity was not found') || errorMessage.includes('API Key must be set')) {
+          setError("Chave de API inválida. Por favor, verifique sua chave e tente novamente.");
       } else {
         setError("Falha ao pré-visualizar a voz. O modelo pode estar sobrecarregado.");
       }
       setVoicePreviews(prev => ({ ...prev, [voice.id]: { url: '', isLoading: false } }));
     }
-  }, [voicePreviews, tone, generateWithRetry]);
+  }, [voicePreviews, tone, generateWithRetry, apiKey]);
   
   const generateSingleAudio = useCallback(async (block: TextBlock) => {
+    if (!apiKey) {
+      setError("Por favor, insira sua Chave de API para gerar áudios.");
+      setGeneratedAudios(prev => ({ ...prev, [block.id]: { url: '', isLoading: false, error: 'Chave de API não configurada.' } }));
+      return;
+    }
+
     setGeneratedAudios(prev => ({...prev, [block.id]: {url: '', isLoading: true, error: null}}));
     try {
         const voice = VOICES.find(v => v.id === block.voiceId);
@@ -194,17 +200,22 @@ const App: React.FC = () => {
     } catch (err) {
         console.error(`Error generating audio for block ${block.id}:`, err);
         let errorMsg = err instanceof Error ? err.message : 'Erro desconhecido.';
-        if (errorMsg.includes('API key not valid') || errorMsg.includes('Requested entity was not found')) {
+        if (errorMsg.includes('API key not valid') || errorMsg.includes('Requested entity was not found') || errorMsg.includes('API Key must be set')) {
             errorMsg = 'Chave de API inválida.';
-            setError("Chave de API inválida. Por favor, selecione uma chave válida e tente gerar novamente.");
+            setError("Chave de API inválida. Por favor, verifique sua chave e tente gerar novamente.");
         } else if (errorMsg.includes('503') || errorMsg.includes('UNAVAILABLE')) {
             errorMsg = 'Modelo sobrecarregado. Tente novamente.';
         }
         setGeneratedAudios(prev => ({...prev, [block.id]: {url: '', isLoading: false, error: errorMsg}}));
     }
-  }, [generateWithRetry]);
+  }, [generateWithRetry, apiKey]);
 
   const handleGenerateAllAudios = useCallback(async () => {
+    if (!apiKey) {
+      setError("Por favor, insira sua Chave de API para gerar os áudios.");
+      return;
+    }
+
     setError(null);
     let blocksToProcess = [...distributedBlocks];
 
@@ -248,7 +259,7 @@ const App: React.FC = () => {
     setIsGeneratingAll(false);
     setStatusMessage(`Geração de áudio concluída para ${blocksToProcess.length} blocos.`);
     setStatusType('success');
-}, [fullScript, charLimit, distributedBlocks, selectedVoice, tone, generateSingleAudio]);
+}, [fullScript, charLimit, distributedBlocks, selectedVoice, tone, generateSingleAudio, apiKey]);
 
 
   const handleDownloadAllAsZip = async () => {
@@ -319,7 +330,6 @@ const App: React.FC = () => {
 
         const pcmData = float32ToInt16(mergedBuffer.getChannelData(0));
         const mp3encoder = new window.lamejs.Mp3Encoder(numChannels, sampleRate, 128); // 128kbps
-        // Fix: Explicitly type mp3Data and create the Blob without a redundant .map() call.
         const mp3Data: Int8Array[] = [];
         const bufferSize = 1152;
         for (let i = 0; i < pcmData.length; i += bufferSize) {
@@ -367,10 +377,6 @@ const App: React.FC = () => {
     }
   }, [generatedAudios, distributedBlocks]);
   
-  // Fix: The line number in the error was likely misleading. This type of error
-  // often occurs when TypeScript's type inference fails, for instance with
-  // Object.values in some environments. Casting the iterated item to the
-  // correct type resolves the ambiguity.
   const hasGeneratedAudios = Object.values(generatedAudios).some(a => (a as GeneratedAudio).url);
 
   return (
@@ -399,6 +405,30 @@ const App: React.FC = () => {
                 </span>
             </div>
         )}
+
+        <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
+            <h2 className="text-xl font-bold text-white">0. Configuração da Chave de API</h2>
+            <p className="text-sm text-gray-400">
+                Sua Chave de API do Google AI Studio é necessária. Ela é armazenada apenas no seu navegador nesta sessão.
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline ml-1">
+                    Obtenha sua chave aqui.
+                </a>
+            </p>
+            <div className="flex items-center gap-2">
+                <input
+                    type="password"
+                    id="api-key"
+                    className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-white focus:ring-red-500 focus:border-red-500"
+                    placeholder="Cole sua Chave de API aqui"
+                    value={apiKey}
+                    onChange={(e) => {
+                        setApiKey(e.target.value);
+                        sessionStorage.setItem('gemini-api-key', e.target.value);
+                    }}
+                />
+            </div>
+            {!apiKey && <p className="text-yellow-400 text-sm font-semibold">⚠️ Por favor, insira sua Chave de API para habilitar a geração de áudio.</p>}
+        </div>
         
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
             <h2 className="text-xl font-bold text-white">1. Insira seu roteiro completo</h2>
@@ -502,7 +532,7 @@ const App: React.FC = () => {
                         {audioInfo?.error && <p className="text-red-400 text-sm">Erro: {audioInfo.error}</p>}
 
                         <div className="flex items-center gap-3">
-                            <button onClick={() => generateSingleAudio(block)} disabled={audioInfo?.isLoading} className="w-full bg-gray-600 hover:bg-gray-500 disabled:bg-gray-800 text-white font-semibold py-2 px-4 rounded-md transition-colors text-sm">
+                            <button onClick={() => generateSingleAudio(block)} disabled={audioInfo?.isLoading || !apiKey} className="w-full bg-gray-600 hover:bg-gray-500 disabled:bg-gray-800 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-md transition-colors text-sm">
                                 {audioInfo?.isLoading ? 'Gerando...' : (audioInfo?.url ? 'Gerar Novamente' : 'Gerar Áudio')}
                             </button>
                             {audioInfo?.url && !audioInfo.isLoading && (
@@ -528,7 +558,7 @@ const App: React.FC = () => {
              <div className="border-t border-gray-700 pt-6 flex flex-col items-center gap-4">
                 <button 
                     onClick={handleGenerateAllAudios} 
-                    disabled={isGeneratingAll || !fullScript.trim()}
+                    disabled={isGeneratingAll || !fullScript.trim() || !apiKey}
                     className="w-full max-w-sm bg-gradient-to-r from-red-600 to-orange-500 text-white font-bold py-3 px-5 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
                 >
                     {isGeneratingAll ? <><Loader text="Gerando..."/> Gerando...</> : (distributedBlocks.length > 0 ? 'Gerar/Regerar Todas as Narrações' : 'Gerar Todas as Narrações')}
