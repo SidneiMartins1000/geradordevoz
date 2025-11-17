@@ -1,6 +1,6 @@
 
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality, GenerateContentParameters } from '@google/genai';
 import { VoiceOption, TextBlock, GeneratedAudio } from './types';
 import { VOICES } from './constants';
@@ -14,10 +14,18 @@ import AudioPlayer from './components/AudioPlayer';
 import { audioBufferToWavBlob, decode, decodeAudioData, float32ToInt16 } from './utils/audioUtils';
 import { splitText } from './utils/textUtils';
 
+// Fix: Define the AIStudio interface and use it for window.aistudio to resolve the type conflict.
+// This aligns with an existing global type definition for window.aistudio.
 declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
   interface Window {
     JSZip: any;
     lamejs: any;
+    aistudio?: AIStudio;
   }
 }
 
@@ -53,6 +61,21 @@ const App: React.FC = () => {
   const [isZipping, setIsZipping] = useState<boolean>(false);
   const [isMerging, setIsMerging] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
+
+  const checkApiKey = useCallback(async () => {
+    if (!window.aistudio) return true; // Failsafe if aistudio is not present
+    const hasKey = await window.aistudio.hasSelectedApiKey();
+    if (!hasKey) {
+      setIsApiKeyMissing(true);
+      setError("Por favor, selecione uma chave de API para continuar.");
+    }
+    return hasKey;
+  }, []);
+
+  useEffect(() => {
+    checkApiKey();
+  }, [checkApiKey]);
 
   // Helper function for API calls with exponential backoff retry
   const generateWithRetry = useCallback(async (params: GenerateContentParameters) => {
@@ -112,6 +135,8 @@ const App: React.FC = () => {
   }, [fullScript, charLimit, selectedVoice, tone]);
 
   const handlePreviewVoice = useCallback(async (voice: VoiceOption) => {
+    if (!(await checkApiKey())) return;
+
     if (voicePreviews[voice.id]?.url) {
       const audio = new Audio(voicePreviews[voice.id].url);
       audio.play();
@@ -151,9 +176,11 @@ const App: React.FC = () => {
       setError("Falha ao pré-visualizar a voz. O modelo pode estar sobrecarregado.");
       setVoicePreviews(prev => ({ ...prev, [voice.id]: { url: '', isLoading: false } }));
     }
-  }, [voicePreviews, tone, generateWithRetry]);
+  }, [voicePreviews, tone, generateWithRetry, checkApiKey]);
   
   const handleGenerateImagePrompts = useCallback(async () => {
+    if (!(await checkApiKey())) return;
+
     if (!fullScript.trim()) {
       alert('Por favor, insira um roteiro completo primeiro.');
       return;
@@ -187,7 +214,7 @@ const App: React.FC = () => {
     } finally {
       setIsPromptLoading(false);
     }
-  }, [fullScript, generateWithRetry]);
+  }, [fullScript, generateWithRetry, checkApiKey]);
 
   const generateSingleAudio = useCallback(async (block: TextBlock) => {
     setGeneratedAudios(prev => ({...prev, [block.id]: {url: '', isLoading: true, error: null}}));
@@ -231,6 +258,8 @@ const App: React.FC = () => {
   }, [generateWithRetry]);
 
   const handleGenerateAllAudios = useCallback(async () => {
+    if (!(await checkApiKey())) return;
+
     if (distributedBlocks.length === 0) {
         alert('Nenhum bloco de texto para gerar.');
         return;
@@ -243,7 +272,7 @@ const App: React.FC = () => {
     await Promise.allSettled(generationPromises);
     
     setIsGeneratingAll(false);
-  }, [distributedBlocks, generateSingleAudio]);
+  }, [distributedBlocks, generateSingleAudio, checkApiKey]);
 
   const handleDownloadAllAsZip = async () => {
     if (!window.JSZip) {
@@ -373,6 +402,28 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 flex flex-col items-center p-4 sm:p-6 lg:p-8">
       <div className="w-full max-w-4xl mx-auto space-y-8">
+        {isApiKeyMissing && (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 p-8 rounded-lg text-center shadow-xl max-w-md w-full">
+                    <h3 className="text-xl font-bold mb-4 text-white">Chave de API Necessária</h3>
+                    <p className="mb-6 text-gray-300">Para usar as funcionalidades de IA, você precisa selecionar uma chave de API do Google AI Studio.</p>
+                    <button
+                        onClick={async () => {
+                            if (!window.aistudio) {
+                                setError("Funcionalidade de seleção de chave não disponível.");
+                                return;
+                            }
+                            await window.aistudio.openSelectKey();
+                            setIsApiKeyMissing(false);
+                            setError(null);
+                        }}
+                        className="w-full py-2 px-4 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 transition-colors"
+                    >
+                        Selecionar Chave de API
+                    </button>
+                </div>
+            </div>
+        )}
         <Header />
         <a href="https://mercadodigitalonline.net/promptautomatico/" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full max-w-sm mx-auto py-3 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 shadow-lg">
             <span className="text-2xl" role="img" aria-label="Pergaminho">📜</span>
@@ -554,7 +605,11 @@ const App: React.FC = () => {
 
                             <div className="flex-shrink-0">
                                 <button 
-                                    onClick={() => generateSingleAudio(block)}
+                                    onClick={async () => {
+                                        if (await checkApiKey()) {
+                                          generateSingleAudio(block);
+                                        }
+                                    }}
                                     disabled={audioInfo?.isLoading || !block.text.trim()}
                                     className="py-2 px-4 bg-gray-600 text-white text-sm font-semibold rounded-md hover:bg-gray-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                                 >
@@ -597,7 +652,7 @@ const App: React.FC = () => {
                     </button>
                 </div>
             )}
-            {error && <p className="text-red-400 text-center mt-4">{JSON.stringify(error)}</p>}
+            {error && <p className="text-red-400 text-center mt-4">{error}</p>}
         </div>
 
         <footer className="text-center text-sm text-gray-500 pt-8">
