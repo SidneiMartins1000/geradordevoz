@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality, GenerateContentParameters } from '@google/genai';
 import { VoiceOption, TextBlock, GeneratedAudio } from './types';
@@ -442,8 +443,8 @@ const App: React.FC = () => {
             </a>
         </div>
         
-        <div className="mt-6 max-w-2xl mx-auto">
-            <div className="aspect-video w-full rounded-lg overflow-hidden shadow-lg">
+        <div className="mt-6 max-w-3xl mx-auto">
+            <div className="aspect-video w-full rounded-lg overflow-hidden shadow-2xl shadow-red-900/20">
                 <iframe 
                     className="w-full h-full"
                     src="https://www.youtube.com/embed/TxtORUFTiGE" 
