@@ -129,6 +129,20 @@ const App: React.FC = () => {
     setDistributedBlocks(prev => prev.map(b => b.id === id ? { ...b, ...newProps } : b));
   }, []);
 
+  const handleApplyDefaultsToAll = useCallback(() => {
+    if (distributedBlocks.length === 0) return;
+    
+    setDistributedBlocks(prevBlocks => 
+      prevBlocks.map(block => ({ 
+          ...block, 
+          voiceId: selectedVoice.id,
+          tone: tone,
+      }))
+    );
+    setStatusMessage(`Voz padrão ('${selectedVoice.name}') e tom ('${tone}') aplicados a todos os ${distributedBlocks.length} blocos.`);
+    setStatusType('success');
+  }, [tone, selectedVoice, distributedBlocks.length]);
+
 
   const handlePreviewVoice = useCallback(async (voice: VoiceOption) => {
     if (!apiKey) {
@@ -517,6 +531,17 @@ const App: React.FC = () => {
                   <SpeedControl speed={speed} onSpeedChange={setSpeed} />
               </div>
             </div>
+            {distributedBlocks.length > 0 && (
+              <div className="border-t border-gray-700 mt-6 pt-4">
+                  <p className="text-sm text-gray-400 mb-2">Alterou a voz ou tom padrão? Aplique as mudanças a todos os blocos existentes.</p>
+                  <button 
+                      onClick={handleApplyDefaultsToAll} 
+                      className="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors"
+                  >
+                      Aplicar Voz e Tom Padrão a Todos os Blocos
+                  </button>
+              </div>
+            )}
         </div>
 
         {distributedBlocks.length > 0 && (
