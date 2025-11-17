@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI, Modality, GenerateContentParameters } from '@google/genai';
 import { VoiceOption, TextBlock, GeneratedAudio } from './types';
 import { VOICES } from './constants';
 
@@ -34,7 +34,7 @@ const TONE_PRESETS: Record<string, string> = {
 
 const App: React.FC = () => {
   const [fullScript, setFullScript] = useState<string>('');
-  const [charLimit, setCharLimit] = useState<string>('5000');
+  const [charLimit, setCharLimit] = useState<string>('200');
   const [distributedBlocks, setDistributedBlocks] = useState<TextBlock[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>('');
 
@@ -53,6 +53,33 @@ const App: React.FC = () => {
   const [isZipping, setIsZipping] = useState<boolean>(false);
   const [isMerging, setIsMerging] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Helper function for API calls with exponential backoff retry
+  const generateWithRetry = useCallback(async (params: GenerateContentParameters) => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    let retries = 3;
+    let delay = 1000;
+
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await ai.models.generateContent(params);
+            return response;
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            const isOverloaded = errorMessage.includes('503') || errorMessage.includes('UNAVAILABLE') || errorMessage.includes('overloaded');
+            
+            if (isOverloaded && i < retries - 1) {
+                console.warn(`API is overloaded. Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2; // Exponential backoff
+            } else {
+                throw err; // Re-throw the error if it's not a retryable one or retries are exhausted
+            }
+        }
+    }
+    // This should not be reached, but as a fallback:
+    throw new Error("Falha na chamada da API após múltiplas tentativas.");
+  }, []);
 
 
   const handleSplitAndDistributeScript = useCallback(() => {
@@ -94,9 +121,8 @@ const App: React.FC = () => {
     setVoicePreviews(prev => ({ ...prev, [voice.id]: { url: '', isLoading: true } }));
 
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
       const textForPreview = `${TONE_PRESETS[tone]}Olá, esta é uma demonstração da minha voz.`;
-      const response = await ai.models.generateContent({
+      const response = await generateWithRetry({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: textForPreview }] }],
         config: {
@@ -122,9 +148,10 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Error previewing voice:', err);
+      setError("Falha ao pré-visualizar a voz. O modelo pode estar sobrecarregado.");
       setVoicePreviews(prev => ({ ...prev, [voice.id]: { url: '', isLoading: false } }));
     }
-  }, [voicePreviews, tone]);
+  }, [voicePreviews, tone, generateWithRetry]);
   
   const handleGenerateImagePrompts = useCallback(async () => {
     if (!fullScript.trim()) {
@@ -135,12 +162,11 @@ const App: React.FC = () => {
     setImagePrompts('');
     setError(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
       const paragraphs = fullScript.split(/\n+/).filter(p => p.trim() !== '');
       
       const promptPromises = paragraphs.map(paragraph => {
         const promptInstruction = `Crie um prompt de imagem em inglês, curto e descritivo, para o texto a seguir. O prompt deve ser otimizado para modelos como Midjourney ou DALL-E. Retorne APENAS o texto do prompt, sem nenhuma introdução ou formatação extra. Texto: "${paragraph}"`;
-        return ai.models.generateContent({
+        return generateWithRetry({
             model: 'gemini-2.5-flash',
             contents: promptInstruction,
         });
@@ -152,11 +178,16 @@ const App: React.FC = () => {
       setImagePrompts(prompts.join('\n\n'));
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : 'Falha ao gerar prompts de imagem.');
+      const errorMsg = err instanceof Error ? err.message : 'Falha ao gerar prompts de imagem.';
+       if (errorMsg.includes('503') || errorMsg.includes('UNAVAILABLE')) {
+        setError('O modelo está sobrecarregado. Por favor, tente novamente em alguns instantes.');
+       } else {
+        setError(errorMsg);
+       }
     } finally {
       setIsPromptLoading(false);
     }
-  }, [fullScript]);
+  }, [fullScript, generateWithRetry]);
 
   const generateSingleAudio = useCallback(async (block: TextBlock) => {
     setGeneratedAudios(prev => ({...prev, [block.id]: {url: '', isLoading: true, error: null}}));
@@ -166,9 +197,8 @@ const App: React.FC = () => {
           throw new Error('Voz não encontrada para o bloco.');
         }
 
-        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
         const textToGenerate = `${TONE_PRESETS[block.tone]}${block.text}`;
-        const response = await ai.models.generateContent({
+        const response = await generateWithRetry({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text: textToGenerate }] }],
             config: {
@@ -192,10 +222,13 @@ const App: React.FC = () => {
         }
     } catch (err) {
         console.error(`Error generating audio for block ${block.id}:`, err);
-        const errorMsg = err instanceof Error ? err.message : 'Erro desconhecido.';
+        let errorMsg = err instanceof Error ? err.message : 'Erro desconhecido.';
+        if (errorMsg.includes('503') || errorMsg.includes('UNAVAILABLE')) {
+            errorMsg = 'Modelo sobrecarregado. Tente novamente.';
+        }
         setGeneratedAudios(prev => ({...prev, [block.id]: {url: '', isLoading: false, error: errorMsg}}));
     }
-  }, []);
+  }, [generateWithRetry]);
 
   const handleGenerateAllAudios = useCallback(async () => {
     if (distributedBlocks.length === 0) {
@@ -564,7 +597,7 @@ const App: React.FC = () => {
                     </button>
                 </div>
             )}
-            {error && <p className="text-red-400 text-center mt-4">{error}</p>}
+            {error && <p className="text-red-400 text-center mt-4">{JSON.stringify(error)}</p>}
         </div>
 
         <footer className="text-center text-sm text-gray-500 pt-8">
