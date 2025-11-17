@@ -94,7 +94,7 @@ const App: React.FC = () => {
     setVoicePreviews(prev => ({ ...prev, [voice.id]: { url: '', isLoading: true } }));
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
       const textForPreview = `${TONE_PRESETS[tone]}Olá, esta é uma demonstração da minha voz.`;
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
@@ -135,7 +135,7 @@ const App: React.FC = () => {
     setImagePrompts('');
     setError(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
       const paragraphs = fullScript.split(/\n+/).filter(p => p.trim() !== '');
       
       const promptPromises = paragraphs.map(paragraph => {
@@ -166,7 +166,7 @@ const App: React.FC = () => {
           throw new Error('Voz não encontrada para o bloco.');
         }
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
         const textToGenerate = `${TONE_PRESETS[block.tone]}${block.text}`;
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
