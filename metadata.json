@@ -1,0 +1,5 @@
+{
+  "name": "Gerador de Áudio Profissional",
+  "description": "Um aplicativo da web que converte texto em português em áudio de alta qualidade usando a API Gemini. Os usuários podem escolher entre várias vozes masculinas e femininas e ajustar a velocidade da fala.",
+  "requestFramePermissions": []
+}
