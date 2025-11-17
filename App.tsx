@@ -547,7 +547,7 @@ const App: React.FC = () => {
                       onClick={handleApplyVoiceToAll} 
                       className="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors"
                   >
-                      Aplicar Voz Padrão a Todos os Blocos
+                      Aplicar a Voz Escolhida a Todos os Blocos
                   </button>
               </div>
             )}
@@ -566,7 +566,7 @@ const App: React.FC = () => {
                       onClick={handleApplyToneToAll}
                       className="w-full mt-2 bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors text-sm"
                     >
-                      Aplicar Tom Padrão a Todos os Blocos
+                      Aplicar o Tom Escolhido a Todos os Blocos
                     </button>
                   )}
               </div>
