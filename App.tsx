@@ -10,6 +10,7 @@ import VoiceGrid from './components/VoiceGrid';
 import SpeedControl from './components/SpeedControl';
 import Loader from './components/Loader';
 import AudioPlayer from './components/AudioPlayer';
+import Confetti from './components/Confetti';
 import { audioBufferToWavBlob, decode, decodeAudioData, float32ToInt16 } from './utils/audioUtils';
 import { splitText } from './utils/textUtils';
 
@@ -33,6 +34,7 @@ const TONE_PRESETS: Record<string, string> = {
 
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>(() => sessionStorage.getItem('gemini-api-key') || '');
+  const [showConfetti, setShowConfetti] = useState<boolean>(false);
   const [fullScript, setFullScript] = useState<string>('');
   const [charLimit, setCharLimit] = useState<string>('5000');
   const [distributedBlocks, setDistributedBlocks] = useState<TextBlock[]>([]);
@@ -50,6 +52,23 @@ const App: React.FC = () => {
   const [isZipping, setIsZipping] = useState<boolean>(false);
   const [isMerging, setIsMerging] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isKeyValid = apiKey.trim().length > 0;
+
+  const handleApiKeyChange = (key: string) => {
+    const wasEmpty = apiKey.trim().length === 0;
+    setApiKey(key);
+    sessionStorage.setItem('gemini-api-key', key);
+    if (wasEmpty && key.trim().length > 0) {
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 5000); // Confetti lasts 5 seconds
+    }
+  };
+
+  const handleRemoveKey = () => {
+      setApiKey('');
+      sessionStorage.removeItem('gemini-api-key');
+  };
 
   const generateWithRetry = useCallback(async (params: GenerateContentParameters) => {
     if (!apiKey) {
@@ -381,6 +400,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 flex flex-col items-center p-4 sm:p-6 lg:p-8">
+      {showConfetti && <Confetti />}
       <div className="w-full max-w-4xl mx-auto space-y-8">
         
         <Header />
@@ -408,26 +428,42 @@ const App: React.FC = () => {
 
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
             <h2 className="text-xl font-bold text-white">0. Configuração da Chave de API</h2>
-            <p className="text-sm text-gray-400">
-                Sua Chave de API do Google AI Studio é necessária. Ela é armazenada apenas no seu navegador nesta sessão.
-                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline ml-1">
-                    Obtenha sua chave aqui.
-                </a>
-            </p>
-            <div className="flex items-center gap-2">
-                <input
-                    type="password"
-                    id="api-key"
-                    className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-white focus:ring-red-500 focus:border-red-500"
-                    placeholder="Cole sua Chave de API aqui"
-                    value={apiKey}
-                    onChange={(e) => {
-                        setApiKey(e.target.value);
-                        sessionStorage.setItem('gemini-api-key', e.target.value);
-                    }}
-                />
-            </div>
-            {!apiKey && <p className="text-yellow-400 text-sm font-semibold">⚠️ Por favor, insira sua Chave de API para habilitar a geração de áudio.</p>}
+            {!isKeyValid ? (
+                <>
+                    <p className="text-sm text-gray-400">
+                        Sua Chave de API do Google AI Studio é necessária. Ela é armazenada apenas no seu navegador nesta sessão.
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline ml-1">
+                            Obtenha sua chave aqui.
+                        </a>
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="password"
+                            id="api-key"
+                            className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-white focus:ring-red-500 focus:border-red-500"
+                            placeholder="Cole sua Chave de API aqui"
+                            value={apiKey}
+                            onChange={(e) => handleApiKeyChange(e.target.value)}
+                        />
+                    </div>
+                    {!apiKey && <p className="text-yellow-400 text-sm font-semibold">⚠️ Por favor, insira sua Chave de API para habilitar a geração de áudio.</p>}
+                </>
+            ) : (
+                <div className="space-y-3">
+                    <p className="text-green-400 text-sm font-semibold flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        Chave de API inserida com sucesso! A geração de áudio está habilitada.
+                    </p>
+                    <button 
+                        onClick={handleRemoveKey} 
+                        className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-500 transition-colors text-sm"
+                    >
+                        Alterar Chave de API
+                    </button>
+                </div>
+            )}
         </div>
         
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
