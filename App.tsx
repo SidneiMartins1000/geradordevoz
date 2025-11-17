@@ -129,19 +129,31 @@ const App: React.FC = () => {
     setDistributedBlocks(prev => prev.map(b => b.id === id ? { ...b, ...newProps } : b));
   }, []);
 
-  const handleApplyDefaultsToAll = useCallback(() => {
+  const handleApplyVoiceToAll = useCallback(() => {
     if (distributedBlocks.length === 0) return;
     
     setDistributedBlocks(prevBlocks => 
       prevBlocks.map(block => ({ 
           ...block, 
           voiceId: selectedVoice.id,
+      }))
+    );
+    setStatusMessage(`Voz padrão ('${selectedVoice.name}') aplicada a todos os ${distributedBlocks.length} blocos.`);
+    setStatusType('success');
+  }, [selectedVoice, distributedBlocks.length]);
+
+  const handleApplyToneToAll = useCallback(() => {
+    if (distributedBlocks.length === 0) return;
+    
+    setDistributedBlocks(prevBlocks => 
+      prevBlocks.map(block => ({ 
+          ...block,
           tone: tone,
       }))
     );
-    setStatusMessage(`Voz padrão ('${selectedVoice.name}') e tom ('${tone}') aplicados a todos os ${distributedBlocks.length} blocos.`);
+    setStatusMessage(`Tom padrão ('${tone}') aplicado a todos os ${distributedBlocks.length} blocos.`);
     setStatusType('success');
-  }, [tone, selectedVoice, distributedBlocks.length]);
+  }, [tone, distributedBlocks.length]);
 
 
   const handlePreviewVoice = useCallback(async (voice: VoiceOption) => {
@@ -515,6 +527,16 @@ const App: React.FC = () => {
             <h2 className="text-xl font-bold text-white">2. Escolha uma voz padrão</h2>
             <p className="text-sm text-gray-400">Esta será a voz inicial para todos os blocos. Você poderá alterá-la individualmente mais tarde.</p>
             <VoiceGrid voices={VOICES} selectedVoice={selectedVoice} onSelectVoice={setSelectedVoice} onPreviewVoice={handlePreviewVoice} previews={voicePreviews}/>
+            {distributedBlocks.length > 0 && (
+              <div className="border-t border-gray-700 mt-4 pt-4">
+                  <button 
+                      onClick={handleApplyVoiceToAll} 
+                      className="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors"
+                  >
+                      Aplicar Voz Padrão a Todos os Blocos
+                  </button>
+              </div>
+            )}
         </div>
 
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
@@ -525,23 +547,20 @@ const App: React.FC = () => {
                   <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)} className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-red-500 focus:border-red-500">
                       {Object.entries(TONE_PRESETS).map(([key, _]) => <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>)}
                   </select>
+                  {distributedBlocks.length > 0 && (
+                    <button
+                      onClick={handleApplyToneToAll}
+                      className="w-full mt-2 bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors text-sm"
+                    >
+                      Aplicar Tom Padrão a Todos os Blocos
+                    </button>
+                  )}
               </div>
               <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Velocidade da Fala ({speed.toFixed(1)}x)</label>
                   <SpeedControl speed={speed} onSpeedChange={setSpeed} />
               </div>
             </div>
-            {distributedBlocks.length > 0 && (
-              <div className="border-t border-gray-700 mt-6 pt-4">
-                  <p className="text-sm text-gray-400 mb-2">Alterou a voz ou tom padrão? Aplique as mudanças a todos os blocos existentes.</p>
-                  <button 
-                      onClick={handleApplyDefaultsToAll} 
-                      className="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors"
-                  >
-                      Aplicar Voz e Tom Padrão a Todos os Blocos
-                  </button>
-              </div>
-            )}
         </div>
 
         {distributedBlocks.length > 0 && (
