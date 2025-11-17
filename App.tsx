@@ -442,6 +442,19 @@ const App: React.FC = () => {
             </a>
         </div>
         
+        <div className="mt-6 max-w-2xl mx-auto">
+            <div className="aspect-video w-full rounded-lg overflow-hidden shadow-lg">
+                <iframe 
+                    className="w-full h-full"
+                    src="https://www.youtube.com/embed/TxtORUFTiGE" 
+                    title="YouTube video player" 
+                    frameBorder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                    allowFullScreen>
+                </iframe>
+            </div>
+        </div>
+
         {error && (
             <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg relative" role="alert">
                 <strong className="font-bold">Erro: </strong>
@@ -533,7 +546,7 @@ const App: React.FC = () => {
                       onClick={handleApplyVoiceToAll} 
                       className="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors"
                   >
-                      Aplicar a Voz Escolhida a Todos os Blocos
+                      Aplicar Voz Padrão a Todos os Blocos
                   </button>
               </div>
             )}
@@ -552,7 +565,7 @@ const App: React.FC = () => {
                       onClick={handleApplyToneToAll}
                       className="w-full mt-2 bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors text-sm"
                     >
-                      Aplicar o Tom Escolhido a Todos os Blocos
+                      Aplicar Tom Padrão a Todos os Blocos
                     </button>
                   )}
               </div>
