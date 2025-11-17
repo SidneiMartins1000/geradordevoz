@@ -528,7 +528,7 @@ const App: React.FC = () => {
                 />
             </div>
             <button onClick={handleSplitAndDistributeScript} className="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-red-500 transition-colors">
-                Separar e distribuir roteiro
+                CLIQUE AQUI PARA APLICAR
             </button>
             {statusMessage && (
               <div className={`p-3 rounded-md text-center ${statusType === 'success' ? 'bg-green-900/50 border border-green-700 text-green-300' : 'bg-gray-700 text-gray-300'}`}>
