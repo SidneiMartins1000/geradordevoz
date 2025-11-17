@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality, GenerateContentParameters } from '@google/genai';
 import { VoiceOption, TextBlock, GeneratedAudio } from './types';
@@ -40,7 +41,7 @@ const TONE_PRESETS: Record<string, string> = {
 
 const App: React.FC = () => {
   const [fullScript, setFullScript] = useState<string>('');
-  const [charLimit, setCharLimit] = useState<string>('2500');
+  const [charLimit, setCharLimit] = useState<string>('5000');
   const [distributedBlocks, setDistributedBlocks] = useState<TextBlock[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [statusType, setStatusType] = useState<'success' | 'info' | 'error'>('info');
@@ -56,7 +57,6 @@ const App: React.FC = () => {
   const [isZipping, setIsZipping] = useState<boolean>(false);
   const [isMerging, setIsMerging] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
 
   const generateWithRetry = useCallback(async (params: GenerateContentParameters) => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -205,17 +205,51 @@ const App: React.FC = () => {
   }, [generateWithRetry]);
 
   const handleGenerateAllAudios = useCallback(async () => {
-    if (distributedBlocks.length === 0) {
-        alert('Nenhum bloco de texto para gerar.');
-        return;
-    }
-    setIsGeneratingAll(true);
     setError(null);
+    let blocksToProcess = [...distributedBlocks];
+
+    if (blocksToProcess.length === 0) {
+        if (!fullScript.trim()) {
+            setStatusMessage('Por favor, insira um roteiro primeiro.');
+            setStatusType('error');
+            return;
+        }
+
+        let limit = parseInt(charLimit, 10);
+        if (isNaN(limit) || limit < 10) limit = 10;
+        else if (limit > 5000) limit = 5000;
+        if (String(limit) !== charLimit) setCharLimit(String(limit));
+
+        const newBlocksRaw = splitText(fullScript, limit);
+        const newBlocks: TextBlock[] = newBlocksRaw.map((block, index) => ({
+            id: `block-${Date.now()}-${index}`,
+            text: block,
+            voiceId: selectedVoice.id,
+            tone: tone,
+        }));
+
+        if (newBlocks.length === 0) {
+            setStatusMessage('O roteiro está vazio ou não pôde ser dividido.');
+            setStatusType('error');
+            return;
+        }
+
+        setDistributedBlocks(newBlocks);
+        setGeneratedAudios({});
+        blocksToProcess = newBlocks;
+    }
+
+    setIsGeneratingAll(true);
+    setStatusMessage(`Gerando áudio para ${blocksToProcess.length} blocos...`);
+    setStatusType('info');
     
-    await Promise.allSettled(distributedBlocks.map(block => generateSingleAudio(block)));
+    await Promise.allSettled(blocksToProcess.map(block => generateSingleAudio(block)));
     
     setIsGeneratingAll(false);
-  }, [distributedBlocks, generateSingleAudio]);
+    setStatusMessage(`Geração de áudio concluída para ${blocksToProcess.length} blocos.`);
+    setStatusType('success');
+}, [fullScript, charLimit, distributedBlocks, selectedVoice, tone, generateSingleAudio]);
+
 
   const handleDownloadAllAsZip = async () => {
     if (!window.JSZip) {
@@ -309,6 +343,29 @@ const App: React.FC = () => {
         setIsMerging(false);
     }
   };
+
+  const handleDownloadSingleBlock = useCallback(async (blockId: string) => {
+    const audioInfo = generatedAudios[blockId];
+    const blockIndex = distributedBlocks.findIndex(b => b.id === blockId);
+
+    if (!audioInfo?.url) {
+        setError("Áudio não encontrado para este bloco.");
+        return;
+    }
+
+    try {
+        const response = await fetch(audioInfo.url);
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `narracao_bloco_${blockIndex + 1}.wav`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (err) {
+        setError(err instanceof Error ? err.message : "Falha ao baixar o áudio.");
+    }
+  }, [generatedAudios, distributedBlocks]);
   
   // Fix: The line number in the error was likely misleading. This type of error
   // often occurs when TypeScript's type inference fails, for instance with
@@ -323,27 +380,15 @@ const App: React.FC = () => {
         <Header />
 
         <div className="text-center">
-            <button 
-                onClick={() => setIsPromptModalOpen(true)}
-                className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+            <a 
+                href="https://mercadodigitalonline.net/promptautomatico/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
             >
                 ✨ Conheça o Prompt Automático
-            </button>
+            </a>
         </div>
-
-        {isPromptModalOpen && (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" onClick={() => setIsPromptModalOpen(false)}>
-                <div className="bg-gray-800 rounded-lg p-8 max-w-lg w-full shadow-2xl" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-2xl font-bold text-white mb-4">Prompt Automático</h3>
-                    <p className="text-gray-400 mb-6">
-                        Esta é uma funcionalidade em desenvolvimento. Em breve, você poderá gerar roteiros automaticamente com base em um tópico ou ideia!
-                    </p>
-                    <button onClick={() => setIsPromptModalOpen(false)} className="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-md hover:bg-red-700">
-                        Fechar
-                    </button>
-                </div>
-            </div>
-        )}
         
         {error && (
             <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg relative" role="alert">
@@ -377,7 +422,7 @@ const App: React.FC = () => {
                 />
             </div>
             <button onClick={handleSplitAndDistributeScript} className="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-red-500 transition-colors">
-                Separar e Distribuir Roteiro
+                Separar e distribuir roteiro
             </button>
             {statusMessage && (
               <div className={`p-3 rounded-md text-center ${statusType === 'success' ? 'bg-green-900/50 border border-green-700 text-green-300' : 'bg-gray-700 text-gray-300'}`}>
@@ -388,7 +433,7 @@ const App: React.FC = () => {
 
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
             <h2 className="text-xl font-bold text-white">2. Escolha uma voz padrão</h2>
-            <p className="text-sm text-gray-400">Esta será a voz inicial para todos os blocos. Você poderá alterá-la individualmente na Etapa 5.</p>
+            <p className="text-sm text-gray-400">Esta será a voz inicial para todos os blocos. Você poderá alterá-la individualmente mais tarde.</p>
             <VoiceGrid voices={VOICES} selectedVoice={selectedVoice} onSelectVoice={setSelectedVoice} onPreviewVoice={handlePreviewVoice} previews={voicePreviews}/>
         </div>
 
@@ -410,15 +455,29 @@ const App: React.FC = () => {
 
         {distributedBlocks.length > 0 && (
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-6">
-            <h2 className="text-xl font-bold text-white">5. Revise os blocos e gere os áudios</h2>
+            <h2 className="text-xl font-bold text-white">4. Revise e gere os áudios individualmente</h2>
             
             <div className="space-y-4">
               {distributedBlocks.map((block, index) => {
                 const audioInfo = generatedAudios[block.id];
+                const blockCharLimit = 5000;
                 return (
                   <div key={block.id} className="bg-gray-700 p-4 rounded-lg">
                     <label className="block text-sm font-medium text-gray-400 mb-1">Bloco {index + 1}</label>
-                    <textarea value={block.text} onChange={e => handleUpdateBlock(block.id, {text: e.target.value})} className="w-full bg-gray-900/50 border border-gray-600 rounded-md p-2 text-white focus:ring-red-500 focus:border-red-500 resize-y" rows={4}/>
+                    <div className="relative">
+                        <textarea 
+                          value={block.text} 
+                          onChange={e => handleUpdateBlock(block.id, {text: e.target.value})} 
+                          className="w-full bg-gray-900/50 border border-gray-600 rounded-md p-2 text-white focus:ring-red-500 focus:border-red-500 resize-y" 
+                          rows={4}
+                          maxLength={blockCharLimit}
+                        />
+                        <span className={`absolute bottom-3 right-3 text-xs pointer-events-none ${
+                            block.text.length >= blockCharLimit ? 'text-red-400 font-bold' : 'text-gray-400'
+                        }`}>
+                            {block.text.length} / {blockCharLimit}
+                        </span>
+                    </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-3">
                         <div>
@@ -434,27 +493,45 @@ const App: React.FC = () => {
                             </select>
                         </div>
                     </div>
-
-                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                    
+                    <div className="mt-3 space-y-3">
                         {audioInfo?.url && !audioInfo.isLoading && (
-                            <div className="w-full sm:w-2/3">
-                                <AudioPlayer src={audioInfo.url} speed={speed} />
-                            </div>
+                            <AudioPlayer src={audioInfo.url} speed={speed} />
                         )}
                         {audioInfo?.isLoading && <Loader text="Gerando áudio..." />}
                         {audioInfo?.error && <p className="text-red-400 text-sm">Erro: {audioInfo.error}</p>}
-                        
-                        <button onClick={() => generateSingleAudio(block)} disabled={audioInfo?.isLoading} className="w-full sm:w-auto bg-gray-600 hover:bg-gray-500 disabled:bg-gray-800 text-white font-semibold py-2 px-4 rounded-md transition-colors text-sm flex-shrink-0">
-                            {audioInfo?.isLoading ? 'Gerando...' : (audioInfo?.url ? 'Gerar Novamente' : 'Gerar Áudio')}
-                        </button>
+
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => generateSingleAudio(block)} disabled={audioInfo?.isLoading} className="w-full bg-gray-600 hover:bg-gray-500 disabled:bg-gray-800 text-white font-semibold py-2 px-4 rounded-md transition-colors text-sm">
+                                {audioInfo?.isLoading ? 'Gerando...' : (audioInfo?.url ? 'Gerar Novamente' : 'Gerar Áudio')}
+                            </button>
+                            {audioInfo?.url && !audioInfo.isLoading && (
+                                <button
+                                    onClick={() => handleDownloadSingleBlock(block.id)}
+                                    className="flex-shrink-0 bg-green-600 hover:bg-green-700 text-white font-bold p-2 rounded-md transition-colors"
+                                    title={`Baixar áudio do bloco ${index + 1}`}
+                                >
+                                    <DownloadIcon className="w-5 h-5" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className="border-t border-gray-700 pt-6 flex flex-col items-center gap-4">
-                <button onClick={handleGenerateAllAudios} disabled={isGeneratingAll} className="w-full max-w-sm bg-gray-700 text-white font-bold py-3 px-6 rounded-md hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                     {isGeneratingAll ? <><Loader text="Gerando..."/> Gerando...</> : 'Gerar Todas as Narrações'}
+          </div>
+        )}
+
+        <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
+            <h2 className="text-xl font-bold text-white">{distributedBlocks.length > 0 ? '5. Geração Final' : '4. Geração Final'}</h2>
+             <div className="border-t border-gray-700 pt-6 flex flex-col items-center gap-4">
+                <button 
+                    onClick={handleGenerateAllAudios} 
+                    disabled={isGeneratingAll || !fullScript.trim()}
+                    className="w-full max-w-sm bg-gradient-to-r from-red-600 to-orange-500 text-white font-bold py-3 px-5 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+                >
+                    {isGeneratingAll ? <><Loader text="Gerando..."/> Gerando...</> : (distributedBlocks.length > 0 ? 'Gerar/Regerar Todas as Narrações' : 'Gerar Todas as Narrações')}
                 </button>
                 {hasGeneratedAudios && (
                   <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
@@ -467,8 +544,8 @@ const App: React.FC = () => {
                   </div>
                 )}
             </div>
-          </div>
-        )}
+        </div>
+
       </div>
       <footer className="text-center text-gray-500 text-sm mt-8 pb-4">
         Desenvolvido por Sidnei Martins, Ferramentas Ilimitadas
